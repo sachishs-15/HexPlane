@@ -38,7 +38,9 @@ def render_test(cfg):
         print("the ckpt path does not exists!!")
         return
 
-    HexPlane = torch.load(cfg.systems.ckpt, map_location=device)
+    #HexPlane = torch.load(cfg.systems.ckpt, map_location=device)
+    HexPlane = wandb.restore(f'{cfg.expname}', wandb.run.dir)
+
     logfolder = os.path.dirname(cfg.systems.ckpt)
 
     if cfg.render_train:
@@ -130,6 +132,8 @@ def reconstruction(cfg):
     )
 
     trainer.train()
+    
+    HexPlane.save(os.path.join(wandb.run.dir, f"{logfolder}/{cfg.expname}"))
 
     torch.save(HexPlane, f"{logfolder}/{cfg.expname}.th")
     # Render training viewpoints.
