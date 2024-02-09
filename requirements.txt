@@ -9,3 +9,13 @@ pytorch_msssim==0.2.1
 scipy==1.9.1
 setuptools==67.6.0
 tqdm==4.65.0
+glob
+pathlib
+typing
+pandas
+torch==1.12.1 
+torchvision==0.13.1 
+torchaudio==0.12.1
+gdown
+imageio[ffmpeg]
+cv2

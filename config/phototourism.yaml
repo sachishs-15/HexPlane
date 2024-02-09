@@ -1,0 +1,34 @@
+data:
+  datadir: ./data/brandenburg
+  scene_bbox_min: [-2.0, -2.0, -2.0]
+  scene_bbox_max: [2.0, 2.0, 2.0]
+  downsample: 1.0
+
+expname: brandenburg
+model:
+  DensityMode: plain
+  N_voxel_init: 262144
+  density_dim: 8
+  fusion_one: multiply
+  fusion_two: multiply
+  init_scale: 0.9
+  init_shift: 0.5
+  model_name: HexPlane_Base
+  time_grid_final: 24
+  time_grid_init: 16
+  update_emptymask_list:
+  - 4000
+  - 8000
+  - 10000
+  upsample_list:
+  - 3000
+  - 6000
+  - 9000
+  upsampling_type: unaligned
+optim:
+  lr_decay_type: exp
+  n_iters: 25000
+render_path: true
+render_test: true
+systems:
+  basedir: ./logs
