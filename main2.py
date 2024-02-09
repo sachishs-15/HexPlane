@@ -8,7 +8,7 @@ import datetime
 from torch.utils.tensorboard import SummaryWriter
 import sys
 
-from config.config import Config
+from config.llff_explicit import config
 from hexplane.dataloader import get_test_dataset, get_train_dataset
 from hexplane.model import init_model
 from hexplane.render.render import evaluation, evaluation_path
@@ -19,6 +19,15 @@ torch.set_default_dtype(torch.float32)
 
 wandb.login(key = "c72679524bbe631e2f579d7e21ea07a12062af28")
 
+run_name = "Unnamed"
+if len(sys.argv) > 1:
+        run_name = str(sys.argv[1])
+    
+wandb.init(
+    entity = "hex-plane",
+    project = "MLRC",
+    name = run_name
+)
 
 def render_test(cfg):
     test_dataset = get_test_dataset(cfg, is_stack=True)
@@ -29,9 +38,7 @@ def render_test(cfg):
         print("the ckpt path does not exists!!")
         return
 
-    #HexPlane = torch.load(cfg.systems.ckpt, map_location=device)
-    HexPlane = wandb.restore(f'{cfg.expname}', wandb.run.dir)
-
+    HexPlane = torch.load(cfg.systems.ckpt, map_location=device)
     logfolder = os.path.dirname(cfg.systems.ckpt)
 
     if cfg.render_train:
@@ -123,12 +130,8 @@ def reconstruction(cfg):
     )
 
     trainer.train()
-    
-    HexPlane.save(os.path.join(wandb.run.dir, f"{logfolder}/{cfg.expname}"))
 
     torch.save(HexPlane, f"{logfolder}/{cfg.expname}.th")
-    wandb.save(f"{logfolder}/{cfg.expname}.th")
-    #wandb.log_model(path=f"{logfolder}/{cfg.expname}.th", name=f"{cfg.expname}")
     # Render training viewpoints.
     if cfg.render_train:
         os.makedirs(f"{logfolder}/imgs_train_all", exist_ok=True)
@@ -180,9 +183,8 @@ def reconstruction(cfg):
 
 
 if __name__ == "__main__":
-
     # Load config file from base config, yaml and cli.
-    base_cfg = OmegaConf.structured(Config())
+    base_cfg = OmegaConf.structured(config())
     cli_cfg = OmegaConf.from_cli()
     base_yaml_path = base_cfg.get("config", None)
     yaml_path = cli_cfg.get("config", None)
@@ -194,14 +196,9 @@ if __name__ == "__main__":
         yaml_cfg = OmegaConf.create()
     cfg = OmegaConf.merge(base_cfg, yaml_cfg, cli_cfg)  # merge configs
 
-    run_name = cfg.expname
-    wandb.init(entity = "hex-plane", project = "MLRC", name = run_name)
-
-    
     cfg2 = OmegaConf.to_container(cfg, resolve=True)
     wandb.config.update(cfg2)
 
-    
     # Fix Random Seed for Reproducibility.
     random.seed(cfg.systems.seed)
     np.random.seed(cfg.systems.seed)
