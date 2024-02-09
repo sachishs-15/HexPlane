@@ -31,6 +31,7 @@ class PhototourismScenes(Enum):
     TREVI = "trevi"
     BRANDENBURG = "brandenburg"
     SACRE = "sacre"
+    NOTRE = "notre"
 
     @staticmethod
     def get_scene_from_datadir(datadir: str) -> 'PhototourismScenes':
@@ -40,6 +41,8 @@ class PhototourismScenes(Enum):
             return PhototourismScenes.TREVI
         if "brandenburg" in datadir:
             return PhototourismScenes.BRANDENBURG
+        if "notre" in datadir:
+            return PhototourismScenes.NOTRE
         raise NotImplementedError(datadir)
 
 
@@ -112,16 +115,32 @@ def load_camera_metadata(datadir: str, idx) -> Tuple[np.ndarray, np.ndarray, np.
 
 def get_ids_for_split(datadir, split):
     # read all files in the tsv first (split to train and test later)
-    tsv = glob.glob(os.path.join(datadir, '*.tsv'))[0]
-    files = pd.read_csv(tsv, sep='\t')
-    files = files[~files['id'].isnull()]  # remove data without id
-    files.reset_index(inplace=True, drop=True)
-    files = files[files["split"] == split]
+    # tsv = glob.glob(os.path.join(datadir, '*.tsv'))[0]
+    # files = pd.read_csv(tsv, sep='\t')
+    # files = files[~files['id'].isnull()]  # remove data without id
+    # files.reset_index(inplace=True, drop=True)
+    # files = files[files["split"] == split]
 
-    imagepaths = sorted((Path(datadir) / "dense" / "images").glob("*.jpg"))
-    imkey = np.array([os.path.basename(im) for im in imagepaths])
-    idx = np.in1d(imkey, files["filename"])
-    return idx, imagepaths
+    # imagepaths = sorted((Path(datadir) / "dense" / "images").glob("*.jpg"))
+    # imkey = np.array([os.path.basename(im) for im in imagepaths])
+    # idx = np.in1d(imkey, files["filename"])
+
+    image_dir = Path(datadir) / "images"
+    image_filenames = glob.glob(os.path.join(image_dir, '*.jpg'))
+
+    test_size = 0.3  # 20% of the data will be in the test set
+
+    # Calculate the number of images in the test set
+    num_test_images = int(len(image_filenames) * test_size)
+
+    if split == "test":
+        files = image_filenames[num_test_images:]
+    elif split == "train":
+        files = image_filenames[:num_test_images]
+    
+    idx = [filename in files for filename in image_filenames]
+
+    return idx, image_filenames
 
 
 def scale_cam_metadata(poses: np.ndarray, kinvs: np.ndarray, bounds: np.ndarray, scale: float = 0.05):
@@ -295,7 +314,6 @@ class Phototourism(Dataset):
             raise NotImplementedError(split)
         
         # torch.cat each corresponding elements in the form torch.cat([rays_o, rays_d], 1)
-
 
         self.all_rays = []  # (h*w, 6)
         for x in len(len(self.all_rays)):
@@ -578,7 +596,7 @@ def pt_spiral_path(
         # each with an additive part - which defines a global shift of all poses
         # and a multiplicative part which changes the amplitude of movement
         # of the poses.
-        if scene == PhototourismScenes.SACRE:
+        if scene == PhototourismScenes.SACRE or scene == PhototourismScenes.NOTRE:
             translation = c2w[:, 3:4] + torch.tensor([[
                 0.01 + 0.03 * np.cos(theta),
                 -0.007 * np.sin(theta),
@@ -632,7 +650,7 @@ def pt_render_poses(datadir: str, n_frames: int, frame_h: int = 800, frame_w: in
         ).argmin()
 
         # For brandenburg and trevi
-        if scene == PhototourismScenes.BRANDENBURG or scene == PhototourismScenes.TREVI:
+        if scene == PhototourismScenes.BRANDENBURG or scene == PhototourismScenes.TREVI or scene == PhototourismScenes.NOTRE:
             near_fars.append((
                 bounds[closest_cam_idx] + torch.tensor([0.01, 0.0])
             ))
