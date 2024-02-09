@@ -1,5 +1,5 @@
 data:
-  datadir: ./data/notre
+  datadir: ./data/brandenburg
   scene_bbox_min: [-2.0, -2.0, -2.0]
   scene_bbox_max: [2.0, 2.0, 2.0]
   downsample: 1.0
