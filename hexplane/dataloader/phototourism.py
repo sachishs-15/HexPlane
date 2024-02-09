@@ -98,10 +98,12 @@ def pose_spherical(theta, phi, radius):
 
 def load_camera_metadata(datadir: str, idx) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     try:
+
         poses = np.load(str(Path(datadir) / "c2w_mats.npy"))[idx]
         kinvs = np.load(str(Path(datadir) / "kinv_mats.npy"))[idx]
         bounds = np.load(str(Path(datadir) / "bds.npy"))[idx]
         res = np.load(str(Path(datadir) / "res_mats.npy"))[idx]
+
     except FileNotFoundError as e:
         error_msg = (
             f"One of the needed Phototourism files does not exist ({e.filename}). "
@@ -125,7 +127,7 @@ def get_ids_for_split(datadir, split):
     # imkey = np.array([os.path.basename(im) for im in imagepaths])
     # idx = np.in1d(imkey, files["filename"])
 
-    image_dir = Path(datadir) / "images"
+    image_dir = Path(datadir) / "brandenburg_gate/dense/images"
     image_filenames = glob.glob(os.path.join(image_dir, '*.jpg'))
 
     test_size = 0.3  # 20% of the data will be in the test set
@@ -139,6 +141,10 @@ def get_ids_for_split(datadir, split):
         files = image_filenames[:num_test_images]
     
     idx = [filename in files for filename in image_filenames]
+
+    # change change
+    # idx = idx[:len(np.load(str(Path(datadir) / "c2w_mats.npy")))] # remove this
+    # image_filenames = image_filenames[:len(np.load(str(Path(datadir) / "c2w_mats.npy")))]
 
     return idx, image_filenames
 
@@ -262,10 +268,15 @@ class Phototourism(Dataset):
 
         if split == 'train' or split == 'test':
             pt_data_file = os.path.join(datadir, f"cache_{split}.pt")
-            if not os.path.isfile(pt_data_file):
-                # Populate cache
-                self.meta_data = cache_data(datadir=datadir, split=split, out_fname=os.path.basename(pt_data_file))
-            pt_data = torch.load(pt_data_file)
+
+            # made change - removed cache loading ------------------------------------------------------------------------------
+
+            # if not os.path.isfile(pt_data_file):
+            #     # Populate cache
+            #     print("hello")
+            self.meta_data = cache_data(datadir=datadir, split=split, out_fname=os.path.basename(pt_data_file))
+            
+            pt_data = self.meta_data
 
             intrinsics = [
                 Intrinsics(width=img.shape[1], height=img.shape[0],
@@ -316,8 +327,10 @@ class Phototourism(Dataset):
         # torch.cat each corresponding elements in the form torch.cat([rays_o, rays_d], 1)
 
         self.all_rays = []  # (h*w, 6)
-        for x in len(len(self.all_rays)):
-            self.all_rays += torch.cat([rays_o[x], rays_d[x]], 1)
+        for x in range(rays_d.shape[0]):
+            # changed to -1 --------------------------------------
+
+            self.all_rays += [torch.cat([rays_o[x], rays_d[x]], -1)]
 
         self.all_rgbs = []
 
@@ -329,7 +342,7 @@ class Phototourism(Dataset):
                 img = img[:, :3] * img[:, -1:] + (
                     1 - img[:, -1:]
                 )  # blend A to RGB, white background
-                self.all_rgbs += [img]
+            self.all_rgbs += [img]
         
         #self.poses = []
         self.all_times = camera_ids #### to check
