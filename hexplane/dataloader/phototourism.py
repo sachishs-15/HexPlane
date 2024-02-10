@@ -99,10 +99,20 @@ def pose_spherical(theta, phi, radius):
 def load_camera_metadata(datadir: str, idx) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     try:
 
-        poses = np.load(str(Path(datadir) / "c2w_mats.npy"))[idx]
-        kinvs = np.load(str(Path(datadir) / "kinv_mats.npy"))[idx]
-        bounds = np.load(str(Path(datadir) / "bds.npy"))[idx]
-        res = np.load(str(Path(datadir) / "res_mats.npy"))[idx]
+        poses = np.load(str(Path(datadir) / "c2w_mats.npy"))[:10]
+        kinvs = np.load(str(Path(datadir) / "kinv_mats.npy"))[:10]
+        bounds = np.load(str(Path(datadir) / "bds.npy"))[:10]
+        res = np.load(str(Path(datadir) / "res_mats.npy"))[:10]
+
+        poses = poses[idx]
+        kinvs = kinvs[idx]
+        bounds = bounds[idx]
+        res = res[idx]
+
+        # poses = np.load(str(Path(datadir) / "c2w_mats.npy"))[idx]
+        # kinvs = np.load(str(Path(datadir) / "kinv_mats.npy"))[idx]
+        # bounds = np.load(str(Path(datadir) / "bds.npy"))[idx]
+        # res = np.load(str(Path(datadir) / "res_mats.npy"))[idx]
 
     except FileNotFoundError as e:
         error_msg = (
@@ -145,6 +155,8 @@ def get_ids_for_split(datadir, split):
     # change change
     # idx = idx[:len(np.load(str(Path(datadir) / "c2w_mats.npy")))] # remove this
     # image_filenames = image_filenames[:len(np.load(str(Path(datadir) / "c2w_mats.npy")))]
+    idx = idx[:10]
+    image_filenames = image_filenames[:10]
 
     return idx, image_filenames
 
@@ -160,16 +172,17 @@ def cache_data(datadir: str, split: str, out_fname: str):
 
     scale = 0.05
     idx, imagepaths = get_ids_for_split(datadir, split)
-
+    
     imagepaths = np.array(imagepaths)[idx]
     poses, kinvs, bounds, res = load_camera_metadata(datadir, idx)
+    
     poses, kinvs, bounds = scale_cam_metadata(poses, kinvs, bounds, scale=scale)
     img_w = res[:, 0]
     img_h = res[:, 1]
     size = int(np.sum(img_w * img_h))
     log.info(f"Loading dataset from {datadir}. Num images={len(imagepaths)}. Total rays={size}.")
 
-    all_images, all_rays_o, all_rays_d, all_bounds, all_camera_ids = [], [], [], [], []
+    all_images, all_rays_o, all_rays_d, all_bounds, all_camera_ids, dirs = [], [], [], [], [], []
     for idx, impath in enumerate(imagepaths):
         image = read_png(impath)
 
@@ -177,7 +190,7 @@ def cache_data(datadir: str, split: str, out_fname: str):
         kinv = torch.from_numpy(kinvs[idx]).float()
         bound = torch.from_numpy(bounds[idx]).float()
 
-        rays_o, rays_d = get_rays_tourism(image.shape[0], image.shape[1], kinv, pose)
+        rays_o, rays_d, dir = get_rays_tourism(image.shape[0], image.shape[1], kinv, pose)
 
         camera_id = torch.tensor(idx)
 
@@ -186,6 +199,7 @@ def cache_data(datadir: str, split: str, out_fname: str):
         all_rays_d.append(rays_d)
         all_bounds.append(bound)
         all_camera_ids.append(camera_id)
+        dirs.append(dir)
 
     meta_data = {
         "images": all_images,
@@ -193,6 +207,8 @@ def cache_data(datadir: str, split: str, out_fname: str):
         "rays_d": all_rays_d,
         "bounds": all_bounds,
         "camera_ids": all_camera_ids,
+        "poses": poses,
+        "directions": dirs
     }
 
     torch.save({
@@ -201,6 +217,8 @@ def cache_data(datadir: str, split: str, out_fname: str):
         "rays_d": all_rays_d,
         "bounds": all_bounds,
         "camera_ids": all_camera_ids,
+        "poses": poses,
+        "directions": dirs
     }, os.path.join(datadir, out_fname))
 
     return meta_data
@@ -229,7 +247,7 @@ def get_rays_tourism(H, W, kinv, pose):
 
     rays_o = pose[:3, -1].expand_as(rays_d)  # (H, W, 3)
 
-    return rays_o, rays_d
+    return rays_o, rays_d, directions
 
 class Phototourism(Dataset):
     def __init__(
@@ -266,6 +284,7 @@ class Phototourism(Dataset):
             [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
         )
 
+        self.intrinsics = []
         if split == 'train' or split == 'test':
             pt_data_file = os.path.join(datadir, f"cache_{split}.pt")
 
@@ -278,13 +297,33 @@ class Phototourism(Dataset):
             
             pt_data = self.meta_data
 
-            intrinsics = [
-                Intrinsics(width=img.shape[1], height=img.shape[0],
-                           center_x=img.shape[1] / 2, center_y=img.shape[0] / 2,
-                           # focals are unused, we reuse intrinsics from Matt's files.
-                           focal_y=0, focal_x=0)
+            self.intrinsics = [
+                torch.tensor(
+            [[0, 0, img.shape[1] / 2], [0, 0, img.shape[0] / 2], [0, 0, 1]]
+        ).float()
                 for img in pt_data["images"]
             ]
+
+        img1 = pt_data["images"][0]
+
+        # added assumption
+        self.directions = pt_data["directions"][0] # addede but just 0 index
+
+                
+        #     self.directions = [get_ray_directions_blender(
+        #     img.shape[0]/2, img.shape[1]/2, [0, 0]
+        # )  # (h, w, 3)
+        # for img in pt_data["images"]
+        # ]
+            
+        # self.directions = [dir/ torch.norm(
+        #     self.directions, dim=-1, keepdim=True)
+            
+        #     for dir in self.directions
+        #     ]
+    
+
+
 
         if split == 'train':
                 near_far = pt_data["bounds"]
@@ -303,6 +342,7 @@ class Phototourism(Dataset):
                 images = torch.cat([img.view(-1, 3) for img in pt_data["images"]], 0)
                 rays_o = torch.cat([ro.view(-1, 3) for ro in pt_data["rays_o"]], 0)
                 rays_d = torch.cat([rd.view(-1, 3) for rd in pt_data["rays_d"]], 0)
+                poses = pt_data["poses"]
 
         elif split == 'test':
                 images = pt_data["images"]
@@ -310,10 +350,11 @@ class Phototourism(Dataset):
                 rays_d = pt_data["rays_d"]
                 near_far = pt_data["bounds"]
                 camera_ids = pt_data["camera_ids"]
+                poses = pt_data["poses"]
 
         elif split == 'render':
             n_frames, frame_size = 150, 800
-            rays_o, rays_d, camera_ids, near_fars = pt_render_poses(
+            rays_o, rays_d, camera_ids, near_far = pt_render_poses(
                 datadir, n_frames=n_frames, frame_h=frame_size, frame_w=frame_size)
             images = None
             intrinsics = [
@@ -321,6 +362,12 @@ class Phototourism(Dataset):
                            center_x=frame_size / 2, center_y=frame_size / 2)
                 for _ in range(n_frames)
             ]
+
+#added this ------------------------------------------------------------------------
+            self.intrinsics = torch.tensor(
+            [[0, 0, frame_size / 2], [0, 0, frame_size / 2], [0, 0, 1]]
+        ).float()
+
         else:
             raise NotImplementedError(split)
         
@@ -344,12 +391,14 @@ class Phototourism(Dataset):
                 )  # blend A to RGB, white background
             self.all_rgbs += [img]
         
-        #self.poses = []
         self.all_times = camera_ids #### to check
         #self.all_depth = []
-        self.near = near_far[:, 0]
-        self.far = near_far[:, 1]
 
+        self.near = []
+        self.far = []
+        for x in near_far:
+            (self.near).append(x.tolist()[0])
+            (self.far).append(x.tolist()[1])
 
         # self.read_meta()  # Read meta data
 
@@ -357,6 +406,9 @@ class Phototourism(Dataset):
         if cal_fine_bbox:
             xyz_min, xyz_max = self.compute_bbox()
             self.scene_bbox = torch.stack((xyz_min, xyz_max), dim=0)
+
+        poses = [torch.FloatTensor(pose) for pose in poses]
+        self.poses = torch.stack(poses)
 
         self.define_proj_mat()
 
@@ -399,8 +451,12 @@ class Phototourism(Dataset):
         xyz_max = -xyz_min
         rays_o = self.all_rays[:, 0:3]
         viewdirs = self.all_rays[:, 3:6]
+
+        near = torch.tensor(self.near)
+        far = torch.tensor(self.far)
+
         pts_nf = torch.stack(
-            [rays_o + viewdirs * self.near, rays_o + viewdirs * self.far]
+            [rays_o + viewdirs * near.view(-1, 1), rays_o + viewdirs * self.view(-1, 1)]
         )
         xyz_min = torch.minimum(xyz_min, pts_nf.amin((0, 1)))
         xyz_max = torch.maximum(xyz_max, pts_nf.amax((0, 1)))
@@ -503,7 +559,9 @@ class Phototourism(Dataset):
         self.transform = T.ToTensor()
 
     def define_proj_mat(self):
-        self.proj_mat = self.intrinsics.unsqueeze(0) @ torch.inverse(self.poses)[:, :3]
+        self.proj_mat = []
+        for x in self.intrinsics:
+            self.proj_mat += x.unsqueeze(0) @ torch.inverse(self.poses)[:, :3]
 
     def world2ndc(self, points, lindisp=None):
         device = points.device
@@ -651,7 +709,7 @@ def pt_render_poses(datadir: str, n_frames: int, frame_h: int = 800, frame_w: in
     all_rays_o, all_rays_d, camera_ids, near_fars = [], [], [], []
     for pose_id, pose in enumerate(r_poses):
         pose = pose.float()
-        rays_o, rays_d = get_rays_tourism(frame_h, frame_w, kinv, pose)
+        rays_o, rays_d, _ = get_rays_tourism(frame_h, frame_w, kinv, pose)
         rays_o = rays_o.view(-1, 3)
         rays_d = rays_d.view(-1, 3)
         all_rays_o.append(rays_o)
