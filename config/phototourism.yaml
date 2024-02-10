@@ -3,6 +3,7 @@ data:
   scene_bbox_min: [-2.0, -2.0, -2.0]
   scene_bbox_max: [2.0, 2.0, 2.0]
   downsample: 1.0
+  dataset_name: phototourism
 
 expname: brandenburg
 model:
